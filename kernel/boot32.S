@@ -4,9 +4,6 @@
 
 #define KERNEL_VMA   0xffff800000000000
 
-//.SET KERNEL_VMA,   0xffff800000000000-0x200000
-
-
 .SET HEADER_LENGTH, header_end - header_start
 .SET CHECKSUM, -(MULTIBOOT2_HEADER_MAGIC + MULTIBOOT_ARCHITECTURE_I386 + HEADER_LENGTH)
 .section .multiboot
@@ -39,17 +36,12 @@ init_gdt64_ptr:
 	.word gdt64_end - gdt64 - 1
 	.long gdt64
 
-
-
 //.data
 //.global multiboot_magic,multiboot_info
 multiboot_magic:
 	.long 0
 multiboot_info:
 	.long 0
-
-// Entry code
-
 
 .code32
 
@@ -60,8 +52,6 @@ _start:
     cli
 
     movl $(stack_top), %esp
-
-    //movl %ebx, %edi
 
     mov %eax, multiboot_magic
     mov %ebx,  multiboot_info
@@ -74,23 +64,14 @@ _start:
     call check_cpuid
     call check_long_mode
 
-
-//    call set_up_page_tables
     call enable_paging
-
 
     call set_up_SSE
 
     // load the 64-bit GDT
     lgdt (init_gdt64_ptr)
 
-    // update selectors
-
-  //  call no_long_mode
-    //call no_long_mode
-
-
-    ljmp  $0x08, $(_start64)//$_long_mode_start//$_start64//$cmain
+    ljmp  $0x08, $(_start64)
 
 .code64
 .extern _start64h
