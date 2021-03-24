@@ -12,7 +12,7 @@ struct IdtEntry{
     uint32_t high;
     uint32_t res1;
 } __attribute__((packed));
-typedef struct IdtEntry IdtEntry_t;
+
 
 struct IdtPtr {
     uint16_t limit;

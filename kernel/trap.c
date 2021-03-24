@@ -6,11 +6,11 @@ struct IdtEntry vectors[256];
 
 void init_idt_entry(struct IdtEntry *entry, uint64_t addr, uint8_t attribute)
 {
-    entry->low = (uint16_t)addr & 0xFFFF;
+    entry->low = (uint16_t)addr;
     entry->selector = 0x08;
     entry->attr = attribute;
-    entry->mid = (uint16_t)(addr>>16) & 0xFFFF;
-    entry->high = (uint32_t)(addr>>32) & 0xFFFFFFFF;
+    entry->mid = (uint16_t)(addr>>16);
+    entry->high = (uint32_t)(addr>>32);
 }
 
 
@@ -48,7 +48,7 @@ void handler(struct TrapFrame *tf)
 {
     unsigned char isr_value;
 
-	printk("received interupt:");
+	printk("received interupt:");
 	printk(" %d\n", tf->trapno);
 
     switch (tf->trapno) {
