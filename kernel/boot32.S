@@ -2,6 +2,11 @@
 #include "sizes.h"
 #include "multiboot2.h"
 
+#define KERNEL_VMA   0xffff800000000000
+
+//.SET KERNEL_VMA,   0xffff800000000000-0x200000
+
+
 .SET HEADER_LENGTH, header_end - header_start
 .SET CHECKSUM, -(MULTIBOOT2_HEADER_MAGIC + MULTIBOOT_ARCHITECTURE_I386 + HEADER_LENGTH)
 .section .multiboot
@@ -20,87 +25,123 @@ header_start:
     .long 8     // size, including itself (short + short + long)
 header_end:
 
-  // Global Descriptor Table
-  .section .rodata
-  .align 4
+// Global Descriptor Table
+.section .data
+
+.align 16
 gdt64:
-  .quad 0 // zero entry
+	.quad 0x0000000000000000 // 0x00 NULL
+	.quad 0x0020980000000000 // 0x08 KCODE64
+gdt64_end:
 
-gdt64_code_entry:
-  .set gdt64_code_seg, gdt64_code_entry - gdt64
-  .quad (1<<44) | (1<<47) | (1<<41) | (1<<43) | (1<<53) // code segment
+.align 16
+init_gdt64_ptr:
+	.word gdt64_end - gdt64 - 1
+	.long gdt64
 
-gdt64_data_entry:
-  .set gdt64_data_seg, gdt64_data_entry - gdt64
-  .quad (1<<44) | (1<<47) | (1<<41) // data segment
 
-gdt64_pointer:
-  .set gdt64_limit, gdt64_pointer - gdt64 - 1
-  .word gdt64_limit
-  .quad gdt64
 
-.data
+//.data
+//.global multiboot_magic,multiboot_info
 multiboot_magic:
 	.long 0
 multiboot_info:
 	.long 0
 
-  // Entry code
-  .global _start
-  .extern cmain
+// Entry code
 
-  .section .text
-  .code32
+
+.code32
+
+.section .text
+.global _start, p4_table, p3_table
+.type _start, @function
 _start:
-    movl $stack_top, %esp
+    cli
+
+    movl $(stack_top), %esp
 
     //movl %ebx, %edi
 
     mov %eax, multiboot_magic
     mov %ebx,  multiboot_info
 
+    /* reset EFLAGS. */
+    pushl $0
+    popf
+
     call check_multiboot
     call check_cpuid
     call check_long_mode
 
-    call set_up_page_tables
+
+//    call set_up_page_tables
     call enable_paging
+
 
     call set_up_SSE
 
     // load the 64-bit GDT
-    lgdt (gdt64_pointer)
+    lgdt (init_gdt64_ptr)
 
     // update selectors
-    movw $gdt64_data_seg, %ax
-    movw %ax, %ss
-    movw %ax, %ds
-    movw %ax, %es
 
-    ljmp  $gdt64_code_seg, $_start64//$cmain
+  //  call no_long_mode
+    //call no_long_mode
 
+
+    ljmp  $0x08, $(_start64)//$_long_mode_start//$_start64//$cmain
+
+.code64
+.extern _start64h
+_start64:
+
+	mov    multiboot_magic, %rsi
+	mov    multiboot_info, %rdi
+	mov    $p4_table, %rdx
+
+	/* do an indirect to force non-relative jmp */
+	movabsq $_start64h, %rax
+	jmp *%rax
+
+error64:
+    movl $0x4f524f45, (0xb8000)
+    movl $0x4f3a4f52, (0xb8004)
+    movl $0x4f204f20, (0xb8008)
+    movb %al, (0xb800a)
+    hlt
+
+.code32
 set_up_page_tables:
 
-    movl $p3_table, %eax
+/*    movl $p3_table, %eax
     orl $0b11, %eax       // present + writable
-    mov %eax, (p4_table)
-    movl $0b10000011, (p3_table)
+    mov %eax, p4_table
+    movl $0b10000011, p3_table*/
 
-
-    movl $1, %ebx
+/*    movl $1, %ebx
     movl $0b10000011, %eax
     movl %eax, p3_table(,%ebx,8)
 
-
-    movl $1, %ebx
+    movl $510, %ebx
     movl p3_table, %eax
-    movl %eax, p4_table(,%ebx,8)
+    movl %eax, p3_table(,%ebx,8)
+
+    movl $511, %ebx
+    movl p3_table, %eax
+    movl %eax, p3_table(,%ebx,8)
+
+
+    movl $511, %ebx
+    movl $p3_table, %eax
+    orl $0b11, %eax
+    movl %eax, p4_table(,%ebx,8)*/
 
     ret
 
 enable_paging:
     // load P4 to cr3 register (cpu uses this to access the P4 table)
-    movl $p4_table, %eax
+    movl $(p4_table), %eax
     movl %eax, %cr3
 
     // enable PAE-flag in cr4 (Physical Address Extension)
@@ -196,40 +237,20 @@ no_SSE:
     jmp error
 
 
-.code64
-
-.global _start64
-.type _start64, @function
-_start64:
-        // Setup segment selectors
-        movw $0, %ax
-        movw %ax, %ds
-        movw %ax, %es
-        movw %ax, %fs
-        movw %ax, %gs
-        movw %ax, %ss
-
-	mov    multiboot_magic, %rsi
-	mov    multiboot_info, %rdi
-
-	call cmain
-
-        // Should never reach here
-        cli
-        hlt
-1:
-        jmp 1b
-
-
-  // Uninitialized data section contain the page tables and stack
-  .section .bss
+.section .data
   .align 4096
 p4_table:
-    .skip 4096
+    .quad p3_table + 3
+    .fill 255,8,0
+    .quad p3_table + 3
+    .fill 255,8,0
+
 p3_table:
-    .skip 4096
-p2_table:
-    .skip 4096
+    	.quad 0x0000000000000083 // 0GB - 1GB
+    	.quad 0x0000000040000083 // 1GB - 2GB
+
+
+.section .bss
 stack_bottom:
     .skip 4096 * 4
 stack_top:
